@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isTreasurer() {
+      return isSignedIn() && (
+        request.auth.token.email == 'wanjohikagunda03@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'member') == 'treasurer')
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validations ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'memberId', 'email', 'role']) &&
+             data.uid is string &&
+             data.memberId is string &&
+             data.email is string &&
+             data.role in ['member', 'treasurer'];
+    }
+
+    // No longer using strict hasAll for updates to allow partial updateDoc calls
+    function isValidUserUpdate(data) {
+      return (data.get('role', 'member') in ['member', 'treasurer']) &&
+             (data.get('balance', 0) is number) &&
+             (data.get('totalDebt', 0) is number);
+    }
+
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['title', 'content', 'type', 'createdAt']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.content is string && data.content.size() <= 2000 &&
+             data.type in ['dividend', 'interest', 'general'] &&
+             (data.get('value', 0) == null || data.get('value', 0) is number) &&
+             (data.get('authorUid', '') is string) &&
+             data.createdAt == request.time;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'amount', 'type', 'status', 'timestamp']) &&
+             isValidId(data.userId) &&
+             data.amount is number &&
+             data.type in ['contribution', 'loan_payment', 'fine', 'debt_addition'] &&
+             data.status in ['pending', 'completed', 'rejected'] &&
+             data.timestamp == request.time;
+    }
+
+    function isValidLoan(data) {
+      return data.keys().hasAll(['userId', 'amount', 'status', 'createdAt']) &&
+             isValidId(data.userId) &&
+             data.amount is number && 
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'read', 'createdAt']) &&
+             isValidId(data.userId) &&
+             data.title is string && data.title.size() <= 100 &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.read is bool &&
+             data.createdAt == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isTreasurer());
+      allow list: if isTreasurer();
+      
+      allow create: if isSignedIn() && (
+        (isOwner(userId) && isValidUser(incoming())) ||
+        (isTreasurer() && isValidUser(incoming()))
+      );
+      
+      allow update: if isSignedIn() && (
+        (isTreasurer()) ||
+        (isOwner(userId) && incoming().get('role', existing().role) == existing().role && 
+         incoming().get('balance', existing().balance) == existing().balance && 
+         incoming().get('totalDebt', existing().totalDebt) == existing().totalDebt)
+      );
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTreasurer() && isValidAnnouncement(incoming());
+    }
+
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && (isOwner(existing().userId) || isTreasurer());
+      allow list: if isSignedIn() && (isTreasurer() || resource.data.userId == request.auth.uid);
+      
+      allow create: if isSignedIn() && (
+        // User can create a pending transaction for themselves
+        (isOwner(incoming().userId) && isValidTransaction(incoming()) && incoming().status == 'pending') ||
+        // Treasurer can create any completed transaction
+        (isTreasurer() && isValidTransaction(incoming()))
+      );
+      
+      allow update: if isTreasurer() && isValidTransaction(incoming());
+      allow delete: if isTreasurer();
+    }
+
+    match /loans/{loanId} {
+      allow get: if isSignedIn() && (isOwner(existing().userId) || isTreasurer());
+      allow list: if isSignedIn() && (isTreasurer() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isOwner(incoming().userId) && isValidLoan(incoming()) && incoming().status == 'pending';
+      allow update: if isTreasurer() && isValidLoan(incoming());
+      allow delete: if isTreasurer();
+    }
+    
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && (isTreasurer() || resource.data.userId == request.auth.uid);
+      allow create: if isTreasurer() && isValidNotification(incoming());
+      allow update: if isSignedIn() && isOwner(existing().userId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+    }
+
+    match /settings/global {
+      allow read: if isSignedIn();
+      allow write: if isTreasurer();
+    }
+  }
+}

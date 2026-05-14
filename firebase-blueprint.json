@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a SACCO member or treasurer.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "memberId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["member", "treasurer"] },
+        "balance": { "type": "number" },
+        "totalDebt": { "type": "number" },
+        "phoneNumber": { "type": "string" },
+        "nationalId": { "type": "string" },
+        "department": { "type": "string" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "memberId", "email", "role"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Updates on dividend rates, loan interest rates, and general info.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["dividend", "interest", "general"] },
+        "value": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "authorUid": { "type": "string" }
+      },
+      "required": ["title", "content", "type", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial records for contributions, loan payments, and fines.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["contribution", "loan_payment", "fine", "debt_addition"] },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "rejected"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "receiptUrl": { "type": "string" }
+      },
+      "required": ["userId", "amount", "type", "status", "timestamp"]
+    },
+    "Loan": {
+      "title": "Loan Application",
+      "description": "Requests for funds by members.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "repaymentTotal": { "type": "number" },
+        "termMonths": { "type": "number" }
+      },
+      "required": ["userId", "amount", "status", "createdAt"]
+    },
+    "SaccoSettings": {
+      "title": "Sacco Settings",
+      "description": "Global constants for the SACCO.",
+      "type": "object",
+      "properties": {
+        "dividendRate": { "type": "number" },
+        "loanInterestRate": { "type": "number" },
+        "fineAmount": { "type": "number" },
+        "fineGracePeriodMinutes": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dividendRate", "loanInterestRate", "fineAmount", "fineGracePeriodMinutes"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User specific alerts.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "alert", "fine"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and balances."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "SACCO-wide updates."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Personal alerts for members."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Record of all financial activities."
+    },
+    "/loans/{loanId}": {
+      "schema": "Loan",
+      "description": "Loan applications and their status."
+    },
+    "/settings/global": {
+      "schema": "SaccoSettings",
+      "description": "Centralized interest and dividend rates."
+    }
+  }
+}
